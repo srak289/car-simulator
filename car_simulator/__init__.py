@@ -171,9 +171,13 @@ class AutomaticTransmission(Transmission):
 
     def auto_shift(self):
         if self._engine.rpm < self._lower_threshold:
+            self.clutch_in()
             self.shift_to(self._prev_gear())
+            self.clutch_out()
         if self._engine.rpm > self._upper_threshold:
+            self.clutch_in()
             self.shift_to(self._next_gear())
+            self.clutch_out()
 
 
 class SportTransmission(Transmission):
