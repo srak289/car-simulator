@@ -204,15 +204,25 @@ class Car(CarBase):
     def speed(self):
         return self._transmission.ratio * self._engine.rpm * 3.14149 * self._tire_size
 
+    def _stat_report(func, *args, **kwargs):
+        def wrap(self, *args, **kwargs):
+            print(self.stats)
+            func(self, *args, **kwargs)
+        return wrap
+
+    @_stat_report
     def start_car(self):
         self._engine.start()
 
+    @_stat_report
     def accelerate(self):
         self._engine.increase()
 
+    @_stat_report
     def decelerate(self):
         self._engine.increase()
 
+    @_stat_report
     def shift(self):
         self._transmission.auto_shift()
 
