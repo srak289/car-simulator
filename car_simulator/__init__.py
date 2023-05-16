@@ -1,22 +1,27 @@
-class Engine:
+class CarBase(object): pass
+class TransmissionBase(object): pass
+class EngineBase(object): pass
+
+class Engine(EngineBase):
     class EngineError(Exception): pass
     class EngineOffError(EngineError): pass
     class EngineRedlineError(EngineError): pass
     class EngineDestroyedError(EngineError): pass
+    class NoTransmissionError(EngineError): pass
 
-    def __init__(self, car: Car, transmission: Transmission, rpm_max, rpm_idle, sport=False):
+    def __init__(self, car: CarBase, rpm_max, rpm_idle, sport=False):
         self._rpm_max = rpm_max
         self._redline = rpm_max - 500
         self._rpm_idle = rpm_idle
         self._rpm = 0
 
-        self._transmission = transmission
         self._car = car
 
         self._ACCELERATION_CONSTANT = 272
         if sport:
             self._ACCELERATION_CONSTANT = 348
 
+        self._transmission = None
         self._running = False
         self._destroyed = True
 
@@ -24,8 +29,13 @@ class Engine:
     def rpm(self):
         return self._rpm
 
+    def connect_transmission(self, transmission):
+        self._transmission = transmission
+
     def _engine_checks(func, *args, **kwargs):
         def wrap(self, *args, **kwargs):
+            if not self._transmission:
+                raise NoTransmissionError("You must connect the transmission")
             if self._destroyed:
                 raise EngineDestroyedError("You destroyed the engine!")
             breakpoint()
@@ -64,7 +74,7 @@ class Engine:
         self._running = False
 
 
-class Transmission:
+class Transmission(TransmissionBase):
     class TransmissionError(Exception): pass
     class ClutchEngagedError(TransmissionError): pass
     class GearNotFoundError(TransmissionError): pass
@@ -81,15 +91,16 @@ class Transmission:
         if not len(self._gears) == len(self._ratios):
             raise TransmissionConfigurationError(f"{self._gears} does not match {self._ratios}")
 
-        self._ratio_map = zip(self._gears, self._ratios)
+        self._ratio_map = {k:v for k, v in zip(self._gears, self._ratios)}
 
         if not final_drive:
-            self._final_drive = final_drive
-        else:
             self._final_drive = 0.12
+        else:
+            self._final_drive = final_drive
 
         self._gear = "N"
 
+        self._engine = engine
         self._engaged = True
 
     @property
@@ -124,21 +135,22 @@ class Transmission:
 
 
 class GenericEngine(Engine):
-    def __init__(self):
-        super().__init__(5500, 550)
+    def __init__(self, car):
+        super().__init__(car, 5500, 550)
 
 
 class SportEngine(Engine):
-    def __init__(self):
-        super().__init__(7800, 625)
+    def __init__(self, car):
+        super().__init__(car, 7800, 625)
 
 
 class AutomaticTransmission(Transmission):
-    class AutomaticTransmissionError(TransmissionError): pass
+    class AutomaticTransmissionError(Transmission.TransmissionError): pass
     class NoEngineConnectionError(AutomaticTransmissionError): pass
 
     def __init__(self, engine):
         self._engine = engine
+        super().__init__(engine)
         self._lower_threshold = 750
         self._upper_threshold = 3200
 
@@ -165,26 +177,28 @@ class AutomaticTransmission(Transmission):
 
 
 class SportTransmission(Transmission):
-    def __init__(self):
+    def __init__(self, engine):
         super().__init__(
+            engine,
             ("R", "N", "1", "2", "3", "4", "5"),
             (-1/3.0, 0, 1/1.95, 1/1.73, 1/1.55, 1/1.25, 1/1.0),
             0.15,
         )
 
 
-class Car:
+class Car(CarBase):
     def __init__(self, engine: Engine = None, transmission: Transmission = None):
         if not engine:
-            self._engine = GenericEngine()
+            self._engine = GenericEngine(self)
         if not transmission:
-            self._transmission = AutomaticTransmission()
+            self._transmission = AutomaticTransmission(self._engine)
+        self._engine.connect_transmission(self._transmission)
         self._tire_size = 200
         self._speed = 0
 
     @property
     def speed(self):
-        return self._transmission.ratio * self._engine.speed * 3.14149 * self._tire_size
+        return self._transmission.ratio * self._engine.rpm * 3.14149 * self._tire_size
 
     def start_car(self):
         self._engine.start()
