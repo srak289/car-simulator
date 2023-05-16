@@ -26,6 +26,10 @@ class Engine(EngineBase):
         self._destroyed = False
 
     @property
+    def running(self):
+        return self._running
+
+    @property
     def rpm(self):
         return self._rpm
 
@@ -147,10 +151,12 @@ class SportEngine(Engine):
 class AutomaticTransmission(Transmission):
     class AutomaticTransmissionError(Transmission.TransmissionError): pass
     class NoEngineConnectionError(AutomaticTransmissionError): pass
+    class EngineOffError(AutomaticTransmissionError): pass
 
     def __init__(self, engine):
         self._engine = engine
         super().__init__(engine)
+
         self._lower_threshold = 750
         self._upper_threshold = 3200
 
@@ -170,6 +176,8 @@ class AutomaticTransmission(Transmission):
     # this will throw indexoutofbounds
 
     def auto_shift(self):
+        if not self._engine.running:
+            raise AutomaticTransmission.EngineOffError("The engine is off!")
         if self._engine.rpm < self._lower_threshold:
             self.clutch_in()
             self.shift_to(self._prev_gear())
@@ -197,12 +205,13 @@ class Car(CarBase):
         if not transmission:
             self._transmission = AutomaticTransmission(self._engine)
         self._engine.connect_transmission(self._transmission)
-        self._tire_size = 200
+        # 225/70R16
+        self._tire_size = 721.4
         self._speed = 0
 
     @property
     def speed(self):
-        return self._transmission.ratio * self._engine.rpm * 3.14149 * self._tire_size
+        return (self._transmission.ratio * self._engine.rpm * 3.14149 * self._tire_size)/1000000
 
     def _stat_report(func, *args, **kwargs):
         def wrap(self, *args, **kwargs):
@@ -216,21 +225,24 @@ class Car(CarBase):
 
     @_stat_report
     def accelerate(self):
+        if type(self._transmission) is AutomaticTransmission:
+            self._transmission.auto_shift()
         self._engine.increase()
 
     @_stat_report
     def decelerate(self):
+        if type(self._transmission) is AutomaticTransmission:
+            self._transmission.auto_shift()
         self._engine.increase()
 
     @_stat_report
-    def shift(self):
-        self._transmission.auto_shift()
+    def shift(self, gear):
+        self._transmission.shift_to(gear)
 
     @property
     def stats(self):
-        print(f"""
-Engine: {self._engine.rpm}
+        return f"""Engine: {self._engine.rpm:d}
 Transmission: {self._transmission.gear}
-Ratio: {self._transmission.ratio}
-Speed: {self.speed}
-""")
+Ratio: {self._transmission.ratio:.2f}
+Speed: {self.speed:.2f}
+"""

@@ -2,11 +2,11 @@ import car_simulator
 
 c = car_simulator.Car()
 
-c.stats
 c.start_car()
-c.shift()
-c.stats
+c.shift("D")
 c.accelerate()
-c.stats
+c.accelerate()
+c.accelerate()
+c.accelerate()
 
 breakpoint()
