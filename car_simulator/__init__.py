@@ -98,7 +98,7 @@ class Transmission(TransmissionBase):
         self._ratio_map = {k:v for k, v in zip(self._gears, self._ratios)}
 
         if not final_drive:
-            self._final_drive = 0.12
+            self._final_drive = 1 / 11
         else:
             self._final_drive = final_drive
 
@@ -194,7 +194,7 @@ class SportTransmission(Transmission):
             engine,
             ("R", "N", "1", "2", "3", "4", "5"),
             (-1/3.0, 0, 1/1.95, 1/1.73, 1/1.55, 1/1.25, 1/1.0),
-            0.15,
+            1/9.75,
         )
 
 
@@ -215,8 +215,8 @@ class Car(CarBase):
 
     def _stat_report(func, *args, **kwargs):
         def wrap(self, *args, **kwargs):
-            print(self.stats)
             func(self, *args, **kwargs)
+            print(self.stats)
         return wrap
 
     @_stat_report
@@ -227,13 +227,17 @@ class Car(CarBase):
     def accelerate(self):
         if type(self._transmission) is AutomaticTransmission:
             self._transmission.auto_shift()
-        self._engine.increase()
+        try:
+            self._engine.increase()
+        except Engine.EngineRedlineError:
+            print("WARNING: The engine is in redline!")
+            raise
 
     @_stat_report
     def decelerate(self):
         if type(self._transmission) is AutomaticTransmission:
             self._transmission.auto_shift()
-        self._engine.increase()
+        self._engine.decrease()
 
     @_stat_report
     def shift(self, gear):
@@ -241,8 +245,20 @@ class Car(CarBase):
 
     @property
     def stats(self):
-        return f"""Engine: {self._engine.rpm:d}
+        return f"""Engine: {self._engine.rpm:.0f}
 Transmission: {self._transmission.gear}
 Ratio: {self._transmission.ratio:.2f}
 Speed: {self.speed:.2f}
 """
+
+class ManualCar(Car):
+    def __init__(self):
+        self._engine = SportEngine(self)
+        self._transmission = SportTransmission(self._engine)
+        super().__init__(self._engine, self._transmission)
+
+    def clutch_in(self):
+        self._transmission.clutch_in()
+
+    def clutch_out(self):
+        self._transmission.clutch_out()
