@@ -23,7 +23,7 @@ class Engine(EngineBase):
 
         self._transmission = None
         self._running = False
-        self._destroyed = True
+        self._destroyed = False
 
     @property
     def rpm(self):
@@ -35,18 +35,17 @@ class Engine(EngineBase):
     def _engine_checks(func, *args, **kwargs):
         def wrap(self, *args, **kwargs):
             if not self._transmission:
-                raise NoTransmissionError("You must connect the transmission")
+                raise Engine.NoTransmissionError("You must connect the transmission")
             if self._destroyed:
-                raise EngineDestroyedError("You destroyed the engine!")
-            breakpoint()
-            if not func == "start":
+                raise Engine.EngineDestroyedError("You destroyed the engine!")
+            if not func.__name__ == "start":
                 if not self._running:
-                    raise EngineOffError("The engine is off!")
+                    raise Engine.EngineOffError("The engine is off!")
             func(self, *args, **kwargs) 
             if self._rpm >= self._redline:
-                raise EngineRedlineError("You are redlining the engine!")
+                raise Engine.EngineRedlineError("You are redlining the engine!")
             if self._rpm >= self._rpm_max:
-                raise EngineDestroyedError("You destroyed the engine!")
+                raise Engine.EngineDestroyedError("You destroyed the engine!")
                 self._running = False
                 self._destroyed = True
         return wrap
@@ -78,6 +77,7 @@ class Transmission(TransmissionBase):
     class TransmissionError(Exception): pass
     class ClutchEngagedError(TransmissionError): pass
     class GearNotFoundError(TransmissionError): pass
+    class TransmissionConfigurationError(TransmissionError): pass
 
     def __init__(self, engine: Engine, gears = None, ratios = None, final_drive = None):
         if not gears:
@@ -89,7 +89,7 @@ class Transmission(TransmissionBase):
         else:
             self._ratios = ratios
         if not len(self._gears) == len(self._ratios):
-            raise TransmissionConfigurationError(f"{self._gears} does not match {self._ratios}")
+            raise Transmission.TransmissionConfigurationError(f"{self._gears} does not match {self._ratios}")
 
         self._ratio_map = {k:v for k, v in zip(self._gears, self._ratios)}
 
@@ -127,10 +127,10 @@ class Transmission(TransmissionBase):
         self._engaged = True
 
     def shift_to(self, gear):
-        if self.engaged():
-            raise ClutchEngagedError("You must disengage the clutch!")
+        if self.engaged:
+            raise Transmission.ClutchEngagedError("You must disengage the clutch!")
         if self.gear not in self.gears:
-            raise GearNotFoundError(f"There is no gear {gear}!")
+            raise Transmission.GearNotFoundError(f"There is no gear {gear}!")
         self._gear = gear
 
 
