@@ -52,9 +52,9 @@ class Engine(EngineBase):
                     raise Engine.EngineOffError("The engine is off!")
             func(self, *args, **kwargs) 
             if self._rpm >= self._rpm_max:
-                raise Engine.EngineDestroyedError("You destroyed the engine!")
                 self._running = False
                 self._destroyed = True
+                raise Engine.EngineDestroyedError("You destroyed the engine!")
             if self._rpm >= self._redline:
                 raise Engine.EngineRedlineError("You are redlining the engine!")
         return wrap
