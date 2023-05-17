@@ -9,17 +9,22 @@ class Engine(EngineBase):
     class EngineDestroyedError(EngineError): pass
     class NoTransmissionError(EngineError): pass
 
-    def __init__(self, car: CarBase, rpm_max, rpm_idle, sport=False):
+    def __init__(
+        self,
+        car: CarBase,
+        rpm_max,
+        rpm_idle,
+        acceleration_constant,
+        redline_delta,
+    ):
         self._rpm_max = rpm_max
-        self._redline = rpm_max - 500
+        self._redline = rpm_max - redline_delta
         self._rpm_idle = rpm_idle
         self._rpm = 0
 
         self._car = car
 
-        self._ACCELERATION_CONSTANT = 272
-        if sport:
-            self._ACCELERATION_CONSTANT = 348
+        self._ACCELERATION_CONSTANT = acceleration_constant
 
         self._transmission = None
         self._running = False
@@ -89,7 +94,7 @@ class Transmission(TransmissionBase):
         else:
             self._gears = gears
         if not ratios:
-            self._ratios = (-1/3.0, 0, 1/1.86, 1/1.45, 1/1.2)
+            self._ratios = (-3.0, 0, 0.22, 0.45, 0.89)
         else:
             self._ratios = ratios
         if not len(self._gears) == len(self._ratios):
@@ -133,27 +138,29 @@ class Transmission(TransmissionBase):
     def shift_to(self, gear):
         if self.engaged:
             raise Transmission.ClutchEngagedError("You must disengage the clutch!")
-        if self.gear not in self.gears:
+        if gear not in self.gears:
             raise Transmission.GearNotFoundError(f"There is no gear {gear}!")
         self._gear = gear
 
 
 class GenericEngine(Engine):
     def __init__(self, car):
-        super().__init__(car, 5500, 550)
+        super().__init__(car, 5500, 550, 272, 630)
 
 
 class SportEngine(Engine):
     def __init__(self, car):
-        super().__init__(car, 7800, 625)
+        super().__init__(car, 7800, 625, 345, 900)
 
 
 class AutomaticTransmission(Transmission):
     class AutomaticTransmissionError(Transmission.TransmissionError): pass
     class NoEngineConnectionError(AutomaticTransmissionError): pass
     class EngineOffError(AutomaticTransmissionError): pass
+    class BrakeNotDepressedError(AutomaticTransmissionError): pass
 
-    def __init__(self, engine):
+    def __init__(self, car: CarBase, engine: EngineBase):
+        self._car = car
         self._engine = engine
         super().__init__(engine)
 
@@ -175,6 +182,14 @@ class AutomaticTransmission(Transmission):
     # we aren't handling the case where we are out of gears
     # this will throw indexoutofbounds
 
+    def shift_to(self, gear):
+        if not self._car.brake_pressed:
+            raise AutomaticTransmission.BrakeNotDepressedError("You must press the brake!")
+        if gear not in self.gears:
+            raise Transmission.GearNotFoundError(f"There is no gear {gear}!")
+        self._gear = gear
+
+
     def auto_shift(self):
         if not self._engine.running:
             raise AutomaticTransmission.EngineOffError("The engine is off!")
@@ -193,7 +208,7 @@ class SportTransmission(Transmission):
         super().__init__(
             engine,
             ("R", "N", "1", "2", "3", "4", "5"),
-            (-1/3.0, 0, 1/1.95, 1/1.73, 1/1.55, 1/1.25, 1/1.0),
+            (-3.0, 0, 0.25, 0.45, 0.55, 0.85, 1),
             1/9.75,
         )
 
@@ -203,15 +218,20 @@ class Car(CarBase):
         if not engine:
             self._engine = GenericEngine(self)
         if not transmission:
-            self._transmission = AutomaticTransmission(self._engine)
+            self._transmission = AutomaticTransmission(self, self._engine)
         self._engine.connect_transmission(self._transmission)
         # 225/70R16
         self._tire_size = 721.4
         self._speed = 0
+        self._brake = False
 
     @property
     def speed(self):
         return (self._transmission.ratio * self._engine.rpm * 3.14149 * self._tire_size)/1000000
+
+    @property
+    def brake_pressed(self):
+        return self._brake
 
     def _stat_report(func, *args, **kwargs):
         def wrap(self, *args, **kwargs):
@@ -224,20 +244,28 @@ class Car(CarBase):
         self._engine.start()
 
     @_stat_report
+    def press_brake(self):
+        self._brake = True
+
+    @_stat_report
+    def release_brake(self):
+        self._brake = False
+
+    @_stat_report
     def accelerate(self):
-        if type(self._transmission) is AutomaticTransmission:
-            self._transmission.auto_shift()
         try:
             self._engine.increase()
         except Engine.EngineRedlineError:
             print("WARNING: The engine is in redline!")
             raise
+        if type(self._transmission) is AutomaticTransmission:
+            self._transmission.auto_shift()
 
     @_stat_report
     def decelerate(self):
+        self._engine.decrease()
         if type(self._transmission) is AutomaticTransmission:
             self._transmission.auto_shift()
-        self._engine.decrease()
 
     @_stat_report
     def shift(self, gear):
@@ -253,8 +281,8 @@ Speed: {self.speed:.2f}
 
 class ManualCar(Car):
     def __init__(self):
-        self._engine = SportEngine(self)
-        self._transmission = SportTransmission(self._engine)
+        self._engine = GenericEngine(self)
+        self._transmission = Transmission(self._engine)
         super().__init__(self._engine, self._transmission)
 
     def clutch_in(self):
