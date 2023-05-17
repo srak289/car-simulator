@@ -158,18 +158,32 @@ class AutomaticTransmission(Transmission):
     class NoEngineConnectionError(AutomaticTransmissionError): pass
     class EngineOffError(AutomaticTransmissionError): pass
     class BrakeNotDepressedError(AutomaticTransmissionError): pass
+    class AutoShiftDisabledError(AutomaticTransmissionError): pass
 
     def __init__(self, car: CarBase, engine: EngineBase):
         self._car = car
         self._engine = engine
-        super().__init__(engine)
+        super().__init__(
+            engine,
+            ("R", "N", "1", "2", "3", "D"),
+            (-3.0, 0, 0.22, 0.45, 0.89, 1),
+        )
 
         self._lower_threshold = 750
         self._upper_threshold = 3200
 
+        self._gear_proxy = None
+
+    @property
+    def gear(self):
+        if self._gear_proxy:
+            return self._gears[self._gear_proxy]
+        else:
+            return self._gear
+
     def _prev_gear(self):
         for i in range(len(self.gears)):
-            if self.gears[i] == self.gear:
+            if self.gears[i] == self._gear_proxy:
                 break
         return self.gears[i-1]
 
@@ -187,20 +201,25 @@ class AutomaticTransmission(Transmission):
             raise AutomaticTransmission.BrakeNotDepressedError("You must press the brake!")
         if gear not in self.gears:
             raise Transmission.GearNotFoundError(f"There is no gear {gear}!")
+        if gear == "D":
+            self._gear_proxy = "1"
         self._gear = gear
-
 
     def auto_shift(self):
         if not self._engine.running:
             raise AutomaticTransmission.EngineOffError("The engine is off!")
+        if not self._gear == "D":
+            raise AutomaticTransmission.AutoShiftDisabledError("You are not in D!")
         if self._engine.rpm < self._lower_threshold:
-            self.clutch_in()
-            self.shift_to(self._prev_gear())
-            self.clutch_out()
+            try:
+                self.shift_to(self._prev_gear())
+            except AutomaticTransmission.BrakeNotDepressedError:
+                pass
         if self._engine.rpm > self._upper_threshold:
-            self.clutch_in()
-            self.shift_to(self._next_gear())
-            self.clutch_out()
+            try:
+                self.shift_to(self._next_gear())
+            except AutomaticTransmission.BrakeNotDepressedError:
+                pass
 
 
 class SportTransmission(Transmission):
